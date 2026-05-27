@@ -3,22 +3,14 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 import re
-from googletrans import Translator
 
-# ================= 初始化 =================
-st.set_page_config(page_title="AutoStat V2", layout="wide")
-st.title("🚗 俄罗斯汽车情报系统 V2（中文增强版）")
+# ================= 页面设置 =================
+st.set_page_config(page_title="AutoStat 稳定版", layout="wide")
 
-translator = Translator()
-
-def to_cn(text):
-    try:
-        return translator.translate(text, dest="zh-cn").text
-    except:
-        return text
+st.title("🚗 俄罗斯汽车行业情报系统（稳定版）")
 
 
-# ================= 抓新闻 =================
+# ================= 获取新闻列表 =================
 def get_news():
     url = "https://eng.autostat.ru/news/"
     r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
@@ -26,8 +18,8 @@ def get_news():
 
     links = soup.find_all("a", href=True)
 
-    seen = set()
     news = []
+    seen = set()
 
     for a in links:
         title = a.get_text(strip=True)
@@ -55,13 +47,13 @@ def get_news():
     return news
 
 
-# ================= 抓详情 =================
+# ================= 获取详情 =================
 def get_detail(url):
     try:
         r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
         soup = BeautifulSoup(r.text, "html.parser")
 
-        # 时间
+        # 时间提取
         date = ""
 
         meta = soup.find("meta", {"property": "article:published_time"})
@@ -88,51 +80,20 @@ def get_detail(url):
         return "未知", ""
 
 
-# ================= 信息抽取 =================
-def extract(text):
-    t = text.lower()
+# ================= 中文摘要（无翻译版本） =================
+def make_summary(text):
 
-    brands = []
-    for b in ["geely", "byd", "lada", "haval", "chery", "toyota"]:
-        if b in t:
-            brands.append(b)
+    if not text:
+        return "暂无内容"
 
-    model = []
-    if "suv" in t:
-        model.append("SUV")
-    if "electric" in t or "ev" in t:
-        model.append("EV")
-    if "sedan" in t:
-        model.append("Sedan")
+    sentences = re.split(r"[.。]", text)
 
-    numbers = re.findall(r"\d+\.?\d*\s?(kw|hp|kwh|rub|usd|million)", t)
-
-    return {
-        "brands": ", ".join(set(brands)) if brands else "Unknown",
-        "model": ", ".join(set(model)) if model else "Unknown",
-        "numbers": ", ".join(numbers[:3]) if numbers else ""
-    }
-
-
-# ================= 中文摘要（升级版） =================
-def summary(title, text):
-
-    raw = (title + " " + text)[:500]
-
-    sentences = re.split(r"[.。]", raw)
     clean = [s.strip() for s in sentences if len(s.strip()) > 30]
 
-    base = "。".join(clean[:3])
-
-    return to_cn(base)
+    return "。".join(clean[:3])
 
 
-# ================= 中文标题 =================
-def cn_title(title):
-    return to_cn(title)
-
-
-# ================= UI =================
+# ================= UI控制 =================
 if st.button("🔄 更新数据"):
     st.rerun()
 
@@ -140,33 +101,31 @@ if st.button("🔄 更新数据"):
 # ================= 主流程 =================
 news = get_news()
 
-data = []
+rows = []
 
 for n in news:
 
-    date, text = get_detail(n["link"])
-    info = extract(text)
+    date, content = get_detail(n["link"])
 
-    data.append({
+    rows.append({
         "日期": date,
-        "中文标题": cn_title(n["title"]),
-        "品牌": info["brands"],
-        "车型": info["model"],
-        "中文摘要": summary(n["title"], text),
+        "英文标题": n["title"],
+        "摘要": make_summary(content),
         "原文链接": n["link"]
     })
 
 
-df = pd.DataFrame(data)
+df = pd.DataFrame(rows)
 
 
 # ================= 展示 =================
 st.dataframe(df, use_container_width=True)
 
+
+# ================= 可展开详情 =================
 for i, row in df.iterrows():
-    with st.expander(row["中文标题"]):
+    with st.expander(row["英文标题"]):
         st.write("📅 日期：", row["日期"])
-        st.write("🚗 品牌：", row["品牌"])
-        st.write("⚙️ 车型：", row["车型"])
-        st.write("📝 摘要：", row["中文摘要"])
+        st.write("📝 摘要：", row["摘要"])
+        st.markdown(f"[👉 查看原文]({row['原文链接']})")
         st.markdown(f"[查看原文]({row['原文链接']})")
